@@ -1,0 +1,12 @@
+# pycharm ide files
+.idea/*
+
+# output
+results
+saved_model
+
+# python cache
+*/__pycache__
+
+#data
+data/cifar-10-batches-py
