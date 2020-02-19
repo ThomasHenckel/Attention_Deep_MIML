@@ -2,8 +2,6 @@ import numpy as np
 import random
 import threading
 from .data_aug_op import random_flip_img, random_rotate_img
-#from keras.preprocessing.image import ImageDataGenerator
-import scipy.misc as sci
 
 class threadsafe_iter(object):
     """

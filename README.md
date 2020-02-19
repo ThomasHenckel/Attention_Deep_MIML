@@ -29,22 +29,22 @@ The challange is then to train the network only knowing the bag labels, and then
 2. predict what label in the bag each image belongs to
 
 ### Results from the implementation
-The model's are trained for 100 epochs and the results is validated on a unseen testset
+The model's are trained for 100 epochs and the results is validated on a the test set
 
 
-|     | bag_accuracy           | instance_accuracy  | true_positive_accuracy  |
-| ------------- |:-------------:| :-----:|:-----:|
-|class 0 | 0.72 | 0.87 | 0.94|
-|class 1 | 0.78 | 0.89 | 0.93|
-|class 2 | 0.60 | 0.70 | 0.77|
-|class 3 | 0.51 | 0.64 | 0.70|
-|class 4 | 0.65 | 0.75 | 0.82|
-|class 5 | 0.53 | 0.78 | 0.89|
-|class 6 | 0.71 | 0.92 | 0.97|
-|class 7 | 0.69 | 0.85 | 0.96|
-|class 8 | 0.67 | 0.90 | 0.97|
-|class 9 | 0.72 | 0.90 | 0.96|
-|**MEAN** | **0.66** | **0.82** | **0.89**|
+| | bag_accuracy | instance_accuracy | true_positive_accuracy |
+| ------ |:----:|:----:|:---:|
+|class 0 | 0.83 | 0.90 | 0.93|
+|class 1 | 0.88 | 0.93 | 0.95|
+|class 2 | 0.64 | 0.80 | 0.90|
+|class 3 | 0.77 | 0.77 | 0.78|
+|class 4 | 0.79 | 0.87 | 0.90|
+|class 5 | 0.80 | 0.83 | 0.86|
+|class 6 | 0.84 | 0.94 | 0.97|
+|class 7 | 0.77 | 0.88 | 0.92|
+|class 8 | 0.83 | 0.94 | 0.97|
+|class 9 | 0.84 | 0.94 | 0.97|
+|**MEAN** | **0.80** | **0.88** | **0.92**|
 
 **bag_accuracy:** The number of bags containing a labe that is predicted to contain that label
 
@@ -57,13 +57,18 @@ I set out to try to solve this problem as i have a big dataset with labeled bags
 
 One option to was to start labeling at hand, but this is of cause time consuming and should be the last option if all else fails.
 
-If these numbers translates, i would be more than happy to get 66% of my dataset sorted with a 90% accuracy.
+If these numbers translates, i would be more than happy to get ~~66%~~ 80% of my dataset sorted with a ~~90%~~ 92% accuracy.
 
 
 ### Future Work
-Im sure that it is possible to construct the attention layer to support a multi label output, however i have not succeded in getting it to work yet.
+I struggled quit a bit to get the output of the network to be multi-class, 
+finally i got it to work by repeating the attention layer for each class, and concatenating the output before compiling the model.
 
-To anyone that is able to construct a network architecture that supports Multi label output that works on the MIML dataset there is a price of 12 home brewed beers
+As many each class in the multi class classification is quit unbalanced, as a image of a specific class is more oftent not in a bag.
+
+Thanks to Dennis for providing a good [solution for applying class weight to multiclass](https://stackoverflow.com/questions/48485870/multi-label-classification-with-class-weights-in-keras),  A solution that also could be adopted to work with multiple input
+
+Im still happy to give 12 homebrews to anyone that can improve the final layers of the network, still not sure my solution is the optimal :-)
 
 ![Alt text](images/homebrew.jpg)
 

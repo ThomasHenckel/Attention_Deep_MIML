@@ -10,7 +10,6 @@ def cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False):
 
     lr = args.init_lr
     weight_decay = args.init_lr
-    momentum = args.momentum
 
     data_input = Input(shape=input_dim, dtype='float32', name='input')
     conv1 = Conv2D(36, kernel_size=(4,4), kernel_regularizer=l2(weight_decay), activation='relu')(data_input)
@@ -25,23 +24,15 @@ def cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False):
     fc2 = Dense(512, activation='relu', kernel_regularizer=l2(weight_decay), name='fc2')(fc1)
     fc2 = Dropout(0.5)(fc2)
 
-  #  fp = Feature_pooling(output_dim=1, kernel_regularizer=l2(0.0005), pooling_mode='max',
-#                          name='fp')(fc2)
     output_layers = []
     for i in range(num_classes):
         alpha = Mil_Attention(L_dim=128, output_dim=1, kernel_regularizer=l2(weight_decay), name='alpha'+str(i), use_gated=args.useGated)(fc2)
         x_mul = multiply([alpha, fc2])
 
-        #out = Dense(1, name='FC1_sigmoid' + str(i), activation='sigmoid')(x_mul)
         out = Last_Sigmoid(output_dim=1, name='FC1_sigmoid'+str(i))(x_mul)
         output_layers.append(out)
 
-    #alpha2 = Mil_Attention(L_dim=128, output_dim=1, kernel_regularizer=l2(weight_decay), name='alpha2', use_gated=args.useGated)(fc2)
-    #x_mul2 = multiply([alpha2, fc2])
-
-    #out2 = Last_Sigmoid(output_dim=1, name='FC1_sigmoid2')(x_mul2)
     x_out = concatenate(output_layers)
-    #x_out = Dense(10, activation='softmax')(x_out)
 
     model = Model(inputs=[data_input], outputs=x_out)
 

@@ -5,8 +5,10 @@ This is a modified version of Jiawen Yao MIL implementation
 
 import numpy as np
 import time
+
+from sklearn.model_selection import train_test_split
+
 from utl import Cell_Net
-from random import shuffle
 import argparse
 
 from utl.dataset import load_dataset
@@ -33,9 +35,6 @@ def parse_args():
     parser.add_argument('--decay', dest='weight_decay',
                         help='weight decay',
                         default=0.0005, type=float)
-    parser.add_argument('--momentum', dest='momentum',
-                        help='momentum',
-                        default=0.9, type=float)
     parser.add_argument('--epoch', dest='max_epoch',
                         help='number of epoch to train',
                         default=100, type=int)
@@ -56,7 +55,21 @@ def parse_args():
     return args
 
 
-def generate_batch(path, input_dim, labels):
+def generate_batch(path, labels, input_dim):
+    """Loads and prepare image data and labels for training.
+    Parameters
+    -----------------
+    path : list
+        List of paths to the image folders
+    labels : list
+        list of labels for each image folder
+    input_dim : list
+        list with height and with of the images to be passe to the model
+    Returns
+    -----------------
+    bags : list
+        List of Lists containing image data, labels, and path to the image
+    """
     bags = []
     for each_path_idx in range(len(path)):
         name_img = []
@@ -78,25 +91,6 @@ def generate_batch(path, input_dim, labels):
     return bags
 
 
-def get_train_valid_Path(Train_set, train_percentage=0.8):
-    """
-    Get path from training set
-    :param Train_set:
-    :param train_percentage:
-    :return:
-    """
-    indexes = np.arange(len(Train_set))
-    shuffle(indexes)
-
-    num_train = int(train_percentage * len(Train_set))
-    train_index, test_index = np.asarray(indexes[:num_train]), np.asarray(indexes[num_train:])
-
-    Model_Train = [Train_set[i] for i in train_index]
-    Model_Val = [Train_set[j] for j in test_index]
-
-    return Model_Train, Model_Val
-
-
 def test_eval(model, test_set, processclass):
     """Evaluate on testing set.
     Parameters
@@ -105,16 +99,14 @@ def test_eval(model, test_set, processclass):
         The training mi-Cell-Net model.
     test_set : list
         A list of testing set contains all training bags features and labels.
+    processclass : integer
+        The class to evaluate from the multiclass
     Returns
     -----------------
-    test_loss : float
-        Mean loss of evaluating on testing set.
-    test_acc : float
-        Mean accuracy of evaluating on testing set.
+    acc : dict
+        Dictionary with evaluation resoults
     """
     num_test_batch = len(test_set)
-    test_loss = np.zeros((num_test_batch, 1), dtype=float)
-    test_acc = np.zeros((num_test_batch, 1), dtype=float)
     test_pred = np.zeros((num_test_batch, 1), dtype=bool)
     test_label = np.zeros((num_test_batch, 1), dtype=int)
     false_bag_predict = 0
@@ -174,37 +166,31 @@ def test_eval(model, test_set, processclass):
             'true_positive_accuracy': true_positive_accuracy, 'found_path': found_path}
 
 
-def calculating_class_weights(y_true):
-    from sklearn.utils.class_weight import compute_class_weight
-    number_dim = np.shape(y_true)[1]
-    weights = np.empty([number_dim, 2])
-    for i in range(number_dim):
-        weights[i] = compute_class_weight('balanced', [0., 1.], y_true[:, i])
-    return weights
-
-
-def train_eval(model, train_set, data_path=None):
-    """Evaluate on training set. Use Keras fit_generator
+def train_eval(model, train_set, test_set, model_save_path):
+    """Train the model
     Parameters
     -----------------
     model : keras.engine.training.Model object
         The training mi-Cell-Net model.
     train_set : list
         A list of training set contains all training bags features and labels.
+    test_set : list
+        A list of test set contains all test bags features and labels.
+    model_save_path : string
+        The model is saved with name including the dataset path
     Returns
     -----------------
     model_name: saved lowest val_loss model's name
     """
     batch_size = 1
-    model_train_set, model_val_set = get_train_valid_Path(train_set, train_percentage=0.9)
 
-    train_gen = DataGenerator(batch_size=1, shuffle=True).generate(model_train_set)
-    val_gen = DataGenerator(batch_size=1, shuffle=False).generate(model_val_set)
+    train_gen = DataGenerator(batch_size=1, shuffle=True).generate(train_set)
+    val_gen = DataGenerator(batch_size=1, shuffle=False).generate(test_set)
 
     if not os.path.exists('saved_model'):
         os.makedirs('saved_model')
 
-    model_name = "saved_model/" + data_path + "_best.hd5"
+    model_name = "saved_model/" + model_save_path + "_best.hd5"
 
     # Load model and continue training.
     if os.path.exists(model_name):
@@ -219,9 +205,9 @@ def train_eval(model, train_set, data_path=None):
 
     callbacks = [checkpoint_fixed_name, EarlyStop]
 
-    history = model.fit_generator(generator=train_gen, steps_per_epoch=len(model_train_set) // batch_size,
+    history = model.fit_generator(generator=train_gen, steps_per_epoch=len(train_set) // batch_size,
                                   epochs=args.max_epoch, validation_data=val_gen,
-                                  validation_steps=len(model_val_set) // batch_size, callbacks=callbacks)
+                                  validation_steps=len(test_set) // batch_size, callbacks=callbacks)
 
     train_loss = history.history['loss']
     val_loss = history.history['val_loss']
@@ -239,7 +225,7 @@ def train_eval(model, train_set, data_path=None):
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'val'], loc='upper left')
-    save_fig_name = 'results/loss_' + data_path + "_best.png"
+    save_fig_name = 'results/loss_' + model_save_path + "_best.png"
     fig.savefig(save_fig_name)
 
     fig = plt.figure()
@@ -249,39 +235,85 @@ def train_eval(model, train_set, data_path=None):
     plt.ylabel('acc')
     plt.xlabel('epoch')
     plt.legend(['train', 'val'], loc='upper left')
-    save_fig_name = 'results/acc_' + data_path + "_best.png"
+    save_fig_name = 'results/acc_' + model_save_path + "_best.png"
     fig.savefig(save_fig_name)
 
     return model_name
 
 
-def model_training(input_dim, dataset, label=None, data_path=None, num_classes=None):
-    train_bags = dataset['train']
-    test_bags = dataset['test']
+def calculating_class_weights(y_true):
+    """Calculates the class weight to make the training balanced
+    Parameters
+    -----------------
+    y_true : list
+        A list of labels.
+    Returns
+    -----------------
+    weights: 2D array with weights for each class
+    """
+    from sklearn.utils.class_weight import compute_class_weight
+    number_dim = np.shape(y_true)[1]
+    weights = np.empty([number_dim, 2])
+    for i in range(number_dim):
+        weights[i] = compute_class_weight('balanced', [0., 1.], y_true[:, i])
+    return weights
 
-    if label:
-        train_set = generate_batch(train_bags, input_dim, label['train'])
-        test_set = generate_batch(test_bags, input_dim, label['test'])
-    else:
-        # convert bag to batch
-        train_set = generate_batch(train_bags, input_dim)
-        test_set = generate_batch(test_bags, input_dim)
 
-    bag_label = []
-    for ibatch, batch in enumerate(train_set):
-        bag_label.append(np.expand_dims(batch[1][0], 0))
+def model_training(path, label, input_dim, num_classes, model_save_path):
+    """Split data and train and evaluate the model
+    Parameters
+    -----------------
+    path : list
+        List of paths to the image folders
+    labels : list
+        list of labels for each image folder
+    input_dim : list
+        list with height and with of the images to be passe to the model
+    num_classes : int
+        The number of classes in the multiclass classification
+    model_save_path : list
+        The model is saved with name including the dataset path
+    Returns
+    -----------------
+    acc[]: List of Evaluation accuracies
+    """
+    X_train, X_test, y_train, y_test = train_test_split(path, label, test_size=0.25, random_state=42)
 
-    bag_label = np.concatenate(bag_label, axis=0)
+    train_set = generate_batch(X_train, y_train, input_dim)
+    test_set = generate_batch(X_test, y_test, input_dim)
 
-    class_weight = calculating_class_weights(bag_label)
-    print(class_weight)
+    class_weight = calculating_class_weights(y_train)
+    print("class weights: ", class_weight)
 
-    model = Cell_Net.cell_net(input_dim, args, 10, class_weight, useMulGpu=False)
+    model = Cell_Net.cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
+
     # train model
     t1 = time.time()
+    train_eval(model, train_set, test_set, model_save_path)
+    t2 = time.time()
+    print('training time:', (t2 - t1) / 60.0, 'min')
 
-    model_name = train_eval(model, train_set, data_path)
+    return model_eval(test_set, num_classes, model_save_path, class_weight)
 
+
+def model_eval(test_set, num_classes, model_save_path, class_weight):
+    """Evaluate the model one class at the time
+    Parameters
+    -----------------
+    test_set : list
+        A list of test set contains all test bags features and labels.
+    model_save_path : list
+        The model is saved with name including the dataset path
+    class_weight : list
+        2D array with weights for each class
+    Returns
+    -----------------
+    acc[]: List of Evaluation accuracies
+    """
+    model = Cell_Net.cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
+
+    t1 = time.time()
+    model_name = "saved_model/" + model_save_path + "_best.hd5"
     print("load saved model weights")
     model.load_weights(model_name)
 
@@ -290,35 +322,36 @@ def model_training(input_dim, dataset, label=None, data_path=None, num_classes=N
         acc[num_class] = test_eval(model, test_set, num_class)
 
     t2 = time.time()
-    print('run time:', (t2 - t1) / 60.0, 'min')
+    print('eval time:', (t2 - t1) / 60.0, 'min')
     return acc
 
 
-def model_eval(data_path, test_set, num_classes):
-    # train model
-    bag_label = []
-    for ibatch, batch in enumerate(test_set):
-        bag_label.append(np.expand_dims(batch[1][0], 0))
+def print_accuracy(acc):
+    """Print the evaluation accuracies
+    Parameters
+    -----------------
+    acc[]: List of Evaluation accuracies
+    """
+    bag_accuracy = []
+    instance_accuracy = []
+    true_positive_accuracy = []
 
-    bag_label = np.concatenate(bag_label, axis=0)
+    print("| |bag_accuracy|instance_acc|true_positive_acc|")
+    print("|------- |:----:|:----:|:----:|")
 
-    class_weight = calculating_class_weights(bag_label)
-    print(class_weight)
+    for process_class in range(num_classes):
+        bag_accuracy.append(acc[process_class]["bag_accuracy"])
+        instance_accuracy.append(acc[process_class]["instance_accuracy"])
+        true_positive_accuracy.append(acc[process_class]["true_positive_accuracy"])
 
-    model = Cell_Net.cell_net(input_dim, args, 10, class_weight, useMulGpu=False)
+        print("|class {0} | {1:.2f} | {2:.2f} | {3:.2f} |"
+              .format(process_class,
+                      acc[process_class]["bag_accuracy"],
+                      acc[process_class]["instance_accuracy"],
+                      acc[process_class]["true_positive_accuracy"]))
 
-    t1 = time.time()
-    model_name = "saved_model/" + data_path + "_best.hd5"
-    print("load saved model weights")
-    model.load_weights(model_name)
-
-    acc = np.zeros((num_classes), dtype=dict)
-    for num_class in range(num_classes):
-        acc[num_class] = test_eval(model, test_set, num_class)
-
-    t2 = time.time()
-    print('run time:', (t2 - t1) / 60.0, 'min')
-    return acc
+    print("|MEAN    | {0:.2f} | {1:.2f} | {2:.2f} |"
+          .format(np.average(bag_accuracy), np.average(instance_accuracy), np.average(true_positive_accuracy)))
 
 
 if __name__ == "__main__":
@@ -330,32 +363,18 @@ if __name__ == "__main__":
 
     input_dim = (32, 32, 3)
     data_path = args.dataPath
-    n_folds = 4
-    num_classes = 10
 
-    dataset, label = load_dataset(dataset_path=data_path, n_folds=n_folds, rand_state=42)
-    print('class=', 0)
-    model_save_path = data_path.replace('\\', '/').split('/')[-1] + "_class" + str(0)
+    dataset, label = load_dataset(data_path)
+    num_classes = len(label[0])
+    acc = []
+    model_save_path = data_path.replace('\\', '/').split('/')[-1]
     if args.run_mode == 'train':
-        acc = model_training(input_dim, dataset[0], label[0], model_save_path, num_classes)
-    if args.run_mode == 'eval':
-        test_set_eval = generate_batch(dataset[0]['test'], input_dim, label[0]['test'])
-        acc = model_eval(model_save_path, test_set_eval, num_classes)
+        acc = model_training(dataset, label, input_dim, num_classes, model_save_path)
+    elif args.run_mode == 'eval':
+        X_train, X_test, y_train, y_test = train_test_split(dataset, label, test_size=0.25, random_state=42)
+        acc = model_eval(generate_batch(X_test, y_test, input_dim), num_classes, model_save_path,
+                         calculating_class_weights(y_train))
+    else:
+        print("runMode should be either train or eval")
 
-    bag_accuracy = []
-    instance_accuracy = []
-    true_positive_accuracy = []
-
-    for process_class in range(num_classes):
-        bag_accuracy.append(acc[process_class]["bag_accuracy"])
-        instance_accuracy.append(acc[process_class]["instance_accuracy"])
-        true_positive_accuracy.append(acc[process_class]["true_positive_accuracy"])
-
-        print("class {0} bag_accuracy {1:.2f} instance_acc {2:.2f} true_positive_acc {3:.2f}"
-              .format(process_class,
-                      acc[process_class]["bag_accuracy"],
-                      acc[process_class]["instance_accuracy"],
-                      acc[process_class]["true_positive_accuracy"]))
-
-    print("MEAN bag_accuracy {0:.2f} instance_acc {1:.2f} true_positive_acc {2:.2f}"
-          .format(np.average(bag_accuracy), np.average(instance_accuracy), np.average(true_positive_accuracy)))
+    print_accuracy(acc)
