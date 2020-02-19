@@ -61,27 +61,19 @@ def generate_batch(path, input_dim, labels):
     for each_path_idx in range(len(path)):
         name_img = []
         img = []
+        bag_label = []
         img_path = glob.glob(path[each_path_idx] + '/*.*')
-        num_ins = len(img_path)
-
-        each_path = path[each_path_idx].replace('\\', '/')  # support for ms windows paths
-        if labels:
-            label = labels[each_path_idx]
-        else:
-            label = int(each_path.split('/')[-2])
-
-        if label == 1:
-            curr_label = np.ones(num_ins, dtype=np.uint8)
-        else:
-            curr_label = np.zeros(num_ins, dtype=np.uint8)
 
         for each_img in img_path:
             img_raw = load_img(each_img, target_size=(input_dim[0], input_dim[1]))  # this is a PIL image
             img_data = img_to_array(img_raw) / 255  # this is a Numpy array with shape (3, 256, 256)
             img.append(np.expand_dims(img_data, 0))
             name_img.append(each_img.split('/')[-1])
+            bag_label.append(np.expand_dims(labels[each_path_idx], 0))
+
         stack_img = np.concatenate(img, axis=0)
-        bags.append((stack_img, curr_label, name_img))
+        stack_labels = np.concatenate(bag_label, axis=0)
+        bags.append((stack_img, stack_labels, name_img))
 
     return bags
 
@@ -131,30 +123,31 @@ def test_eval(model, test_set, processclass):
     true_instance_predict = 0
     true_bag_instance_predict = 0
     found_path = []
-    get_alpha_layer_output = K.function([model.layers[0].input], [model.get_layer("alpha").output])
+    print('Processing Class: ', processclass)
+    get_alpha_layer_output1 = K.function([model.layers[0].input], [model.get_layer("alpha" + str(processclass)).output])
+
     for ibatch, batch in enumerate(test_set):
 
-        result = model.predict_on_batch(x=batch[0]).round()  # , y=batch[1])
+        result = model.predict_on_batch(x=batch[0])[0].round()
+        layer_outs = get_alpha_layer_output1([batch[0], 1.])
 
-        layer_outs = get_alpha_layer_output([batch[0], 1.])
+        test_label[ibatch] = batch[1][0][processclass]
+        test_pred[ibatch] = result[processclass]
 
-        test_label[ibatch] = batch[1][0]
-        test_pred[ibatch] = result
-
-        if test_label[ibatch] == 0:
+        if test_label[ibatch][0] == 0:
             continue
 
         maxidx = np.asarray(layer_outs).argmax()
         found_path.append(batch[2][maxidx])
         if batch[2][maxidx].find(str(processclass) + '_') > -1:
             true_instance_predict = true_instance_predict + 1
-            if result == test_label[ibatch]:
+            if result[processclass] == test_label[ibatch]:
                 true_bag_instance_predict += 1
 
         else:
             false_instance_predict = false_instance_predict + 1
 
-        if result == test_label[ibatch]:
+        if result[processclass] == test_label[ibatch]:
             true_bag_predict = true_bag_predict + 1
         else:
             false_bag_predict = false_bag_predict + 1
@@ -179,6 +172,15 @@ def test_eval(model, test_set, processclass):
 
     return {"bag_accuracy": bag_accuracy, 'instance_accuracy': instance_accuracy,
             'true_positive_accuracy': true_positive_accuracy, 'found_path': found_path}
+
+
+def calculating_class_weights(y_true):
+    from sklearn.utils.class_weight import compute_class_weight
+    number_dim = np.shape(y_true)[1]
+    weights = np.empty([number_dim, 2])
+    for i in range(number_dim):
+        weights[i] = compute_class_weight('balanced', [0., 1.], y_true[:, i])
+    return weights
 
 
 def train_eval(model, train_set, data_path=None):
@@ -219,8 +221,7 @@ def train_eval(model, train_set, data_path=None):
 
     history = model.fit_generator(generator=train_gen, steps_per_epoch=len(model_train_set) // batch_size,
                                   epochs=args.max_epoch, validation_data=val_gen,
-                                  validation_steps=len(model_val_set) // batch_size, callbacks=callbacks,
-                                  class_weight={0: 1, 1: 3})
+                                  validation_steps=len(model_val_set) // batch_size, callbacks=callbacks)
 
     train_loss = history.history['loss']
     val_loss = history.history['val_loss']
@@ -254,7 +255,7 @@ def train_eval(model, train_set, data_path=None):
     return model_name
 
 
-def model_training(input_dim, dataset, label=None, data_path=None, process_class=None):
+def model_training(input_dim, dataset, label=None, data_path=None, num_classes=None):
     train_bags = dataset['train']
     test_bags = dataset['test']
 
@@ -266,7 +267,16 @@ def model_training(input_dim, dataset, label=None, data_path=None, process_class
         train_set = generate_batch(train_bags, input_dim)
         test_set = generate_batch(test_bags, input_dim)
 
-    model = Cell_Net.cell_net(input_dim, args, useMulGpu=False)
+    bag_label = []
+    for ibatch, batch in enumerate(train_set):
+        bag_label.append(np.expand_dims(batch[1][0], 0))
+
+    bag_label = np.concatenate(bag_label, axis=0)
+
+    class_weight = calculating_class_weights(bag_label)
+    print(class_weight)
+
+    model = Cell_Net.cell_net(input_dim, args, 10, class_weight, useMulGpu=False)
     # train model
     t1 = time.time()
 
@@ -275,29 +285,40 @@ def model_training(input_dim, dataset, label=None, data_path=None, process_class
     print("load saved model weights")
     model.load_weights(model_name)
 
-    test_res = test_eval(model, test_set, process_class)
+    acc = np.zeros((num_classes), dtype=dict)
+    for num_class in range(num_classes):
+        acc[num_class] = test_eval(model, test_set, num_class)
 
     t2 = time.time()
-
     print('run time:', (t2 - t1) / 60.0, 'min')
+    return acc
 
-    return test_res
 
-
-def model_eval(data_path, test_set, process_class):
+def model_eval(data_path, test_set, num_classes):
     # train model
-    model = Cell_Net.cell_net(input_dim, args, useMulGpu=False)
+    bag_label = []
+    for ibatch, batch in enumerate(test_set):
+        bag_label.append(np.expand_dims(batch[1][0], 0))
+
+    bag_label = np.concatenate(bag_label, axis=0)
+
+    class_weight = calculating_class_weights(bag_label)
+    print(class_weight)
+
+    model = Cell_Net.cell_net(input_dim, args, 10, class_weight, useMulGpu=False)
 
     t1 = time.time()
     model_name = "saved_model/" + data_path + "_best.hd5"
     print("load saved model weights")
     model.load_weights(model_name)
 
-    test_res = test_eval(model, test_set, process_class)
+    acc = np.zeros((num_classes), dtype=dict)
+    for num_class in range(num_classes):
+        acc[num_class] = test_eval(model, test_set, num_class)
 
     t2 = time.time()
     print('run time:', (t2 - t1) / 60.0, 'min')
-    return test_res
+    return acc
 
 
 if __name__ == "__main__":
@@ -312,18 +333,14 @@ if __name__ == "__main__":
     n_folds = 4
     num_classes = 10
 
-    acc = np.zeros((num_classes), dtype=dict)
-
-    for process_class in range(num_classes):
-        dataset, label = load_dataset(dataset_path=data_path, n_folds=n_folds, rand_state=42,
-                                      numClasses=process_class)
-        print('class=', process_class)
-        model_save_path = data_path.replace('\\', '/').split('/')[-1] + "_class" + str(process_class)
-        if args.run_mode == 'train':
-            acc[process_class] = model_training(input_dim, dataset[0], label[0], model_save_path, process_class)
-        if args.run_mode == 'eval':
-            test_set_eval = generate_batch(dataset[0]['test'], input_dim, label[0]['test'])
-            acc[process_class] = model_eval(model_save_path, test_set_eval, process_class)
+    dataset, label = load_dataset(dataset_path=data_path, n_folds=n_folds, rand_state=42)
+    print('class=', 0)
+    model_save_path = data_path.replace('\\', '/').split('/')[-1] + "_class" + str(0)
+    if args.run_mode == 'train':
+        acc = model_training(input_dim, dataset[0], label[0], model_save_path, num_classes)
+    if args.run_mode == 'eval':
+        test_set_eval = generate_batch(dataset[0]['test'], input_dim, label[0]['test'])
+        acc = model_eval(model_save_path, test_set_eval, num_classes)
 
     bag_accuracy = []
     instance_accuracy = []

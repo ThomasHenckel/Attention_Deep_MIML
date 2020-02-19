@@ -3,19 +3,22 @@ import os
 import pandas as pd
 from sklearn.model_selection import KFold
 
-def load_dataset(dataset_path, n_folds, rand_state, numClasses):
+
+def load_dataset(dataset_path, n_folds, rand_state):
     """
     Parameters
     --------------------
     :param dataset_path:
     :param n_folds:
+    :param rand_state:
     :return: list
         List contains split datasets for K-Fold cross-validation
     """
-    if os.path.exists(dataset_path+'/data.csv'):
+    if os.path.exists(dataset_path + '/data.csv'):
         data = pd.read_csv(dataset_path + '/data.csv')
         all_path = (dataset_path + '/' + data['imageBucket'].astype(str)).to_numpy()
-        all_label = data['label_'+str(numClasses)].to_numpy()
+        all_label = data.drop(['imageBucket'], axis=1).to_numpy()
+
     else:
         # load datapath from path
         all_path = glob.glob(dataset_path + '/**/*')

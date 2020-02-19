@@ -2,11 +2,11 @@ from keras.utils import multi_gpu_model
 from keras.models import Model
 from keras.optimizers import SGD,Adam
 from keras.regularizers import l2
-from keras.layers import Input, Dense, Layer, Dropout, Conv2D, MaxPooling2D, Flatten, multiply
-from .metrics import bag_accuracy, bag_loss
+from keras.layers import Input, Dense, Layer, Dropout, Conv2D, MaxPooling2D, Flatten, multiply,concatenate
+from .metrics import bag_accuracy, bag_loss, get_weighted_loss
 from .custom_layers import Mil_Attention, Last_Sigmoid
 
-def cell_net(input_dim, args, useMulGpu=False):
+def cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False):
 
     lr = args.init_lr
     weight_decay = args.init_lr
@@ -27,21 +27,31 @@ def cell_net(input_dim, args, useMulGpu=False):
 
   #  fp = Feature_pooling(output_dim=1, kernel_regularizer=l2(0.0005), pooling_mode='max',
 #                          name='fp')(fc2)
+    output_layers = []
+    for i in range(num_classes):
+        alpha = Mil_Attention(L_dim=128, output_dim=1, kernel_regularizer=l2(weight_decay), name='alpha'+str(i), use_gated=args.useGated)(fc2)
+        x_mul = multiply([alpha, fc2])
 
-    alpha = Mil_Attention(L_dim=128, output_dim=1, kernel_regularizer=l2(weight_decay), name='alpha', use_gated=args.useGated)(fc2)
-    x_mul = multiply([alpha, fc2])
+        #out = Dense(1, name='FC1_sigmoid' + str(i), activation='sigmoid')(x_mul)
+        out = Last_Sigmoid(output_dim=1, name='FC1_sigmoid'+str(i))(x_mul)
+        output_layers.append(out)
 
-    out = Last_Sigmoid(output_dim=1, name='FC1_sigmoid')(x_mul)
-    #
-    model = Model(inputs=[data_input], outputs=[out])
+    #alpha2 = Mil_Attention(L_dim=128, output_dim=1, kernel_regularizer=l2(weight_decay), name='alpha2', use_gated=args.useGated)(fc2)
+    #x_mul2 = multiply([alpha2, fc2])
 
-    # model.summary()
+    #out2 = Last_Sigmoid(output_dim=1, name='FC1_sigmoid2')(x_mul2)
+    x_out = concatenate(output_layers)
+    #x_out = Dense(10, activation='softmax')(x_out)
+
+    model = Model(inputs=[data_input], outputs=x_out)
+
+    print(model.summary())
 
     if useMulGpu == True:
         parallel_model = multi_gpu_model(model, gpus=2)
-        parallel_model.compile(optimizer=Adam(lr=lr, beta_1=0.9, beta_2=0.999), loss=bag_loss, metrics=[bag_accuracy])
+        parallel_model.compile(optimizer=Adam(lr=lr, beta_1=0.9, beta_2=0.999), loss=get_weighted_loss(class_weight), metrics=[bag_accuracy])
     else:
-        model.compile(optimizer=Adam(lr=lr, beta_1=0.9, beta_2=0.999), loss=bag_loss, metrics=[bag_accuracy])
+        model.compile(optimizer=Adam(lr=lr, beta_1=0.9, beta_2=0.999), loss=get_weighted_loss(class_weight), metrics=[bag_accuracy])
         parallel_model = model
 
     return parallel_model
