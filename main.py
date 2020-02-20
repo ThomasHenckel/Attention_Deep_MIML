@@ -17,9 +17,9 @@ import glob
 
 from utl.DataGenerator import DataGenerator
 
-from keras import backend as K
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from keras.preprocessing.image import img_to_array, load_img
+from tensorflow.keras import backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix
@@ -120,7 +120,8 @@ def test_eval(model, test_set, processclass):
 
     for ibatch, batch in enumerate(test_set):
 
-        result = model.predict_on_batch(x=batch[0])[0].round()
+        result = model.predict_on_batch(x=batch[0])[0].numpy()
+        result = result.round()
         layer_outs = get_alpha_layer_output1([batch[0], 1.])
 
         test_label[ibatch] = batch[1][0][processclass]

@@ -1,6 +1,6 @@
-from keras.layers import Layer
-from keras import backend as K
-from keras import activations, initializers, regularizers
+from tensorflow.keras.layers import Layer
+from tensorflow.keras import backend as K
+from tensorflow.keras import initializers, regularizers
 
 class Mil_Attention(Layer):
     """
