@@ -29,6 +29,7 @@ The challange is then to train the network only knowing the bag labels, and then
 2. predict what label in the bag each image belongs to
 
 ### Results from the implementation
+#### CIFAR-10
 The model's are trained for 100 epochs and the results is validated on a the test set
 
 
@@ -51,6 +52,64 @@ The model's are trained for 100 epochs and the results is validated on a the tes
 **instance_accuracy:** How accurate the system was in selecting an image of a specific class, knowing that the bag is containing at least one image from the class
 
 **true_positive_accuracy:** If the system predicted the bag to contain a class, how accurate it was to select the right image in the bag
+#### Transfer Learning on Natural Images Dataset
+The most natural thing to try to increase performance of a image classification is of cause Transfer Learning. 
+The MIML network is a standard convolutional network with attentin at the last layers, 
+so it is fairly easy to take a VGG16 and load pre-trained weights trained on ImageNET
+(I know VGG16 is not the to exiting but i know it well and is fine as a baseline)
+
+First trained network for 100 epochs without loading pre-trained weights to get a baseline
+natural images 100 epochs
+
+| | bag_accuracy | instance_acc | true_positive_acc |
+| ------- |:----:|:----:|:----:|
+|class 0 | 0.94 | 0.99 | 1.00 |
+|class 1 | 0.96 | 1.00 | 0.99 |
+|class 2 | 0.94 | 0.92 | 0.92 |
+|class 3 | 0.69 | 0.89 | 0.94 |
+|class 4 | 0.91 | 0.97 | 0.99 |
+|class 5 | 1.00 | 1.00 | 1.00 |
+|class 6 | 0.95 | 1.00 | 1.00 |
+|class 7 | 0.98 | 1.00 | 1.00 |
+|**MEAN**    | **0.92** | **0.97** | **0.98** |
+
+So the base accuracy on [natural-images](https://www.kaggle.com/prasunroy/natural-images) is better than CIFAR-10 properly the bigger image size makes it easier
+
+Then 10 Epochs with pre-trained weights. the VGG16 network weights are frozen, to allow the final layer to train without destroying any of the VGG16 network layers in the process
+
+| |bag_accuracy|instance_acc|true_positive_acc|
+|------- |:----:|:----:|:----:|
+|class 0 | 0.98 | 1.00 | 1.00 |
+|class 1 | 1.00 | 1.00 | 1.00 |
+|class 2 | 0.97 | 0.99 | 0.99 |
+|class 3 | 0.95 | 1.00 | 1.00 |
+|class 4 | 0.97 | 1.00 | 1.00 |
+|class 5 | 1.00 | 1.00 | 1.00 |
+|class 6 | 1.00 | 1.00 | 1.00 |
+|class 7 | 0.99 | 1.00 | 1.00 |
+|**MEAN**    | **0.98** | **1.00** | **1.00** |
+
+Not to shabby, best results i have seen on any experimet i have done so fore. this properly is because the dataset contains objects very similar to ImageNet
+
+Next one should try to fine-tune the VGG16 network trainable, so 10 epochs with the "Block 5" trainable
+
+| |bag_accuracy|instance_acc|true_positive_acc|
+|------- |:----:|:----:|:----:|
+|class 0 | 0.99 | 0.99 | 0.99 |
+|class 1 | 1.00 | 1.00 | 1.00 |
+|class 2 | 0.89 | 0.99 | 1.00 |
+|class 3 | 0.98 | 0.95 | 0.95 |
+|class 4 | 0.98 | 0.98 | 0.99 |
+|class 5 | 1.00 | 1.00 | 1.00 |
+|class 6 | 1.00 | 1.00 | 1.00 |
+|class 7 | 0.99 | 1.00 | 1.00 |
+|**MEAN**    | **0.98** | **0.99** | **0.99** |
+
+The results from training the last block of the VGG16 network decreased the networks performance.
+The VGG16 weights were trained on a large dataset, with little noise, 
+This dataset have increased the noise as images from different classes have been joined in one bag, and is also pretty small in size
+
+Fine-tuning might give increases if the dataset is bigger, or if the classes is further from the original ImageNet classes
 
 ### Reflections
 I set out to try to solve this problem as i have a big dataset with labeled bags of images. I would like to train a traditional supervised image classifier, howewer that requires that i label each image in the image bags.
@@ -58,6 +117,7 @@ I set out to try to solve this problem as i have a big dataset with labeled bags
 One option to was to start labeling at hand, but this is of cause time consuming and should be the last option if all else fails.
 
 If these numbers translates, i would be more than happy to get ~~66%~~ 80% of my dataset sorted with a ~~90%~~ 92% accuracy.
+
 
 
 ### Future Work

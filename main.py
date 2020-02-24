@@ -9,6 +9,7 @@ import time
 from sklearn.model_selection import train_test_split
 
 from utl import Cell_Net
+from utl import vgg16_Net
 import argparse
 
 from utl.dataset import load_dataset
@@ -47,10 +48,21 @@ def parse_args():
     parser.add_argument('--runMode', dest='run_mode',
                         help='train or eval',
                         default='train', type=str)
+    parser.add_argument('--network', dest='network',
+                        help='networks that can be used cell_net or vgg16',
+                        default='cell_net', type=str)
+    parser.add_argument('--image_size', dest='image_size',
+                        help='image size in pixels',
+                        default=32, type=int)
+    parser.add_argument('--transfer_learning', dest='transfer_learning',
+                        help='use pre-trained weights',
+                        default=True, type=bool)
+    parser.add_argument('--layers_not_trainable', dest='layers_not_trainable',
+                        help='layers to block when doing transfer learning',
+                        default=17, type=int)
     # if len(sys.argv) == 1:
     #     parser.print_help()
     #     sys.exit(1)
-
     args = parser.parse_args()
     return args
 
@@ -259,7 +271,7 @@ def calculating_class_weights(y_true):
     return weights
 
 
-def model_training(path, label, input_dim, num_classes, model_save_path):
+def model_training(path, label, input_dim, num_classes, model_save_path, network):
     """Split data and train and evaluate the model
     Parameters
     -----------------
@@ -285,7 +297,10 @@ def model_training(path, label, input_dim, num_classes, model_save_path):
     class_weight = calculating_class_weights(y_train)
     print("class weights: ", class_weight)
 
-    model = Cell_Net.cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
+    if network == 'cell_net':
+        model = Cell_Net.cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
+    else:
+        model = vgg16_Net.vgg16_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
 
     # train model
     t1 = time.time()
@@ -293,10 +308,10 @@ def model_training(path, label, input_dim, num_classes, model_save_path):
     t2 = time.time()
     print('training time:', (t2 - t1) / 60.0, 'min')
 
-    return model_eval(test_set, num_classes, model_save_path, class_weight)
+    return model_eval(test_set, num_classes, model_save_path, class_weight,network)
 
 
-def model_eval(test_set, num_classes, model_save_path, class_weight):
+def model_eval(test_set, num_classes, model_save_path, class_weight, network):
     """Evaluate the model one class at the time
     Parameters
     -----------------
@@ -310,7 +325,10 @@ def model_eval(test_set, num_classes, model_save_path, class_weight):
     -----------------
     acc[]: List of Evaluation accuracies
     """
-    model = Cell_Net.cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
+    if network == 'cell_net':
+        model = Cell_Net.cell_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
+    else:
+        model = vgg16_Net.vgg16_net(input_dim, args, num_classes, class_weight, useMulGpu=False)
 
     t1 = time.time()
     model_name = "saved_model/" + model_save_path + "_best.hd5"
@@ -361,19 +379,20 @@ if __name__ == "__main__":
     print('Called with args:')
     print(args)
 
-    input_dim = (32, 32, 3)
+    input_dim = (args.image_size, args.image_size, 3)
     data_path = args.dataPath
+    network = args.network
 
     dataset, label = load_dataset(data_path)
     num_classes = len(label[0])
     acc = []
     model_save_path = data_path.replace('\\', '/').split('/')[-1]
     if args.run_mode == 'train':
-        acc = model_training(dataset, label, input_dim, num_classes, model_save_path)
+        acc = model_training(dataset, label, input_dim, num_classes, model_save_path, network)
     elif args.run_mode == 'eval':
         X_train, X_test, y_train, y_test = train_test_split(dataset, label, test_size=0.25, random_state=42)
         acc = model_eval(generate_batch(X_test, y_test, input_dim), num_classes, model_save_path,
-                         calculating_class_weights(y_train))
+                         calculating_class_weights(y_train),network)
     else:
         print("runMode should be either train or eval")
 
